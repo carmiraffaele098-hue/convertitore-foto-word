@@ -1,18 +1,15 @@
 import os, io, json
 from flask import Flask, render_template_string, request, send_file
-import google.generativeai as genai
+from google import genai
 from PIL import Image
 from docx import Document
 from docx.shared import Pt, RGBColor
 
 app = Flask(__name__)
 
+# Inizializzazione nuovo client Google GenAI
 API_KEY = os.getenv("GOOGLE_API_KEY")
-if API_KEY:
-    genai.configure(api_key=API_KEY)
-
-# Utilizziamo il modello stabile supportato da v1/v1beta
-model = genai.GenerativeModel('gemini-2.0-flash')
+client = genai.Client(api_key=API_KEY) if API_KEY else None
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -56,8 +53,8 @@ def home():
 @app.route('/convert', methods=['POST'])
 def convert():
     file = request.files.get('immagine')
-    if not file:
-        return "Nessun file caricato", 400
+    if not file or not client:
+        return "Errore configurazione o nessun file", 400
     try:
         immagine_pil = Image.open(file.stream)
         buffer = io.BytesIO()
@@ -84,7 +81,12 @@ def convert():
         }
         """
 
-        response = model.generate_content([prompt, img_pulita])
+        # Chiamata API con l'SDK aggiornato
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt, img_pulita]
+        )
+        
         testo_pulito = response.text.replace("```json", "").replace("```", "").strip()
         struttura = json.loads(testo_pulito)
 
