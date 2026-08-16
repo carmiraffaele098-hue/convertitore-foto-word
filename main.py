@@ -55,7 +55,7 @@ def convert():
     if not file:
         return "Nessun file caricato", 400
     if not API_KEY:
-        return "Errore: GOOGLE_API_KEY non configurata su Render", 500
+        return "Errore: GOOGLE_API_KEY non trovata", 500
 
     try:
         immagine_pil = Image.open(file.stream)
@@ -85,7 +85,6 @@ def convert():
 
         modelli = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']
         response = None
-        errore_dettagliato = ""
 
         for m in modelli:
             try:
@@ -93,11 +92,11 @@ def convert():
                 response = model.generate_content([prompt, img_pulita])
                 if response and response.text:
                     break
-            except Exception as e:
-                errore_dettagliato += f"[{m}: {str(e)}] "
+            except Exception:
+                continue
 
         if not response:
-            return f"Errore nei modelli: {errore_dettagliato}", 500
+            return "Errore durante l'elaborazione del modello AI", 500
 
         testo_pulito = response.text.replace("```json", "").replace("```", "").strip()
         struttura = json.loads(testo_pulito)
@@ -132,4 +131,3 @@ def convert():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
-    
