@@ -46,15 +46,45 @@ HTML_PAGE = """
 def home():
     return render_template_string(HTML_PAGE)
 
+@app.route('/test-key')
+def test_key():
+    if not API_KEY:
+        return "Errore: GOOGLE_API_KEY non trovata nelle variabili d'ambiente di Render.", 500
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY}"
+    res = requests.get(url)
+    if res.status_code != 200:
+        return f"Errore durante il controllo della chiave API ({res.status_code}): {res.text}", 500
+    
+    data = res.json()
+    models = [m.get("name") for m in data.get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])]
+    return f"<h3>Modelli disponibili per la tua API Key:</h3><pre>{json.dumps(models, indent=2)}</pre>"
+
 @app.route('/convert', methods=['POST'])
 def convert():
     file = request.files.get('immagine')
     if not file:
         return "Nessun file caricato", 400
     if not API_KEY:
-        return "Errore: GOOGLE_API_KEY non configurata nelle variabili d'ambiente", 500
+        return "Errore: GOOGLE_API_KEY non configurata", 500
 
     try:
+        # Trova automaticamente un modello valido tra quelli della tua API Key
+        models_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY}"
+        models_res = requests.get(models_url)
+        
+        target_model = None
+        if models_res.status_code == 200:
+            all_models = [m.get("name") for m in models_res.json().get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])]
+            for m in all_models:
+                if "flash" in m or "pro" in m:
+                    target_model = m
+                    break
+        
+        if not target_model:
+            target_model = "models/gemini-1.5-flash"
+
+        # Converte l'immagine
         immagine_pil = Image.open(file.stream)
         buffer = io.BytesIO()
         immagine_pil.convert("RGB").save(buffer, format="JPEG")
@@ -94,28 +124,19 @@ def convert():
             }]
         }
 
-        # Elenco degli endpoint da testare
-        endpoints = [
-            f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={API_KEY}",
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEY}",
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={API_KEY}"
-        ]
+        # Invio richiesta a Google
+        url = f"https://generativelanguage.googleapis.com/v1beta/{target_model}:generateContent?key={API_KEY}"
+        res = requests.post(url, headers=headers, json=payload)
 
-        res = None
-        for url in endpoints:
-            response = requests.post(url, headers=headers, json=payload)
-            if response.status_code == 200:
-                res = response
-                break
-
-        if not res:
-            return f"Nessun endpoint ha risposto con successo. Ultima risposta: {response.text}", 500
+        if res.status_code != 200:
+            return f"Errore Google ({res.status_code}): {res.text}", 500
 
         res_json = res.json()
         raw_text = res_json['candidates'][0]['content']['parts'][0]['text']
         testo_pulito = raw_text.replace("```json", "").replace("```", "").strip()
         struttura = json.loads(testo_pulito)
 
+        # Genera il file Word
         doc = Document()
         for blocco in struttura.get("blocchi", []):
             tipo = blocco.get("tipo")
@@ -147,3 +168,4 @@ def convert():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
+    
