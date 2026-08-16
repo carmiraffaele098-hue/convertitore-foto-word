@@ -1,0 +1,1 @@
+# convertitore-foto-word
