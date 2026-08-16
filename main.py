@@ -1,6 +1,6 @@
 import os, io, json
 from flask import Flask, render_template_string, request, send_file
-from google import genai
+import google.generativeai as genai
 from PIL import Image
 from docx import Document
 from docx.shared import Pt, RGBColor
@@ -8,7 +8,11 @@ from docx.shared import Pt, RGBColor
 app = Flask(__name__)
 
 API_KEY = os.getenv("GOOGLE_API_KEY")
-client = genai.Client(api_key=API_KEY) if API_KEY else None
+if API_KEY:
+    genai.configure(api_key=API_KEY)
+
+# Utilizziamo il modello stabile supportato da v1/v1beta
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -80,11 +84,7 @@ def convert():
         }
         """
 
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[prompt, img_pulita]
-        )
-        
+        response = model.generate_content([prompt, img_pulita])
         testo_pulito = response.text.replace("```json", "").replace("```", "").strip()
         struttura = json.loads(testo_pulito)
 
