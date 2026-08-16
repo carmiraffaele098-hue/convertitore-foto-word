@@ -55,7 +55,6 @@ def convert():
         return "Errore: GOOGLE_API_KEY non configurata nelle variabili d'ambiente", 500
 
     try:
-        # Converti immagine in base64
         immagine_pil = Image.open(file.stream)
         buffer = io.BytesIO()
         immagine_pil.convert("RGB").save(buffer, format="JPEG")
@@ -80,8 +79,6 @@ def convert():
         }
         """
 
-        # Chiamata HTTP diretta all'endpoint API REST di Gemini
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
         headers = {'Content-Type': 'application/json'}
         payload = {
             "contents": [{
@@ -97,17 +94,28 @@ def convert():
             }]
         }
 
-        res = requests.post(url, headers=headers, json=payload)
+        # Elenco degli endpoint da testare
+        endpoints = [
+            f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={API_KEY}",
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={API_KEY}",
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={API_KEY}"
+        ]
+
+        res = None
+        for url in endpoints:
+            response = requests.post(url, headers=headers, json=payload)
+            if response.status_code == 200:
+                res = response
+                break
+
+        if not res:
+            return f"Nessun endpoint ha risposto con successo. Ultima risposta: {response.text}", 500
+
         res_json = res.json()
-
-        if res.status_code != 200:
-            return f"Errore API Google ({res.status_code}): {res.text}", 500
-
         raw_text = res_json['candidates'][0]['content']['parts'][0]['text']
         testo_pulito = raw_text.replace("```json", "").replace("```", "").strip()
         struttura = json.loads(testo_pulito)
 
-        # Genera il file Word
         doc = Document()
         for blocco in struttura.get("blocchi", []):
             tipo = blocco.get("tipo")
