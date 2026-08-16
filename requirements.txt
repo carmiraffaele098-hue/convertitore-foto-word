@@ -1,0 +1,5 @@
+google-generativeai
+python-docx
+Pillow
+flask
+gunicorn
