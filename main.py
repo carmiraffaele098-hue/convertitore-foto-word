@@ -1,6 +1,5 @@
-import os, io, json
+import os, io, json, base64, requests
 from flask import Flask, render_template_string, request, send_file
-import google.generativeai as genai
 from PIL import Image
 from docx import Document
 from docx.shared import Pt, RGBColor
@@ -8,8 +7,6 @@ from docx.shared import Pt, RGBColor
 app = Flask(__name__)
 
 API_KEY = os.getenv("GOOGLE_API_KEY")
-if API_KEY:
-    genai.configure(api_key=API_KEY)
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -55,16 +52,16 @@ def convert():
     if not file:
         return "Nessun file caricato", 400
     if not API_KEY:
-        return "Errore: GOOGLE_API_KEY non trovata", 500
+        return "Errore: GOOGLE_API_KEY non configurata nelle variabili d'ambiente", 500
 
     try:
+        # Converti immagine in base64
         immagine_pil = Image.open(file.stream)
         buffer = io.BytesIO()
         immagine_pil.convert("RGB").save(buffer, format="JPEG")
-        buffer.seek(0)
-        img_pulita = Image.open(buffer)
+        img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
 
-        prompt = """
+        prompt_text = """
         Analizza l'immagine ed estrai tutto il testo mantenendo la struttura visiva.
         Rispondi ESCLUSIVAMENTE con un JSON valido con questa struttura:
         {
@@ -83,24 +80,34 @@ def convert():
         }
         """
 
-        modelli = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']
-        response = None
+        # Chiamata HTTP diretta all'endpoint API REST di Gemini
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+        headers = {'Content-Type': 'application/json'}
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"text": prompt_text},
+                    {
+                        "inline_data": {
+                            "mime_type": "image/jpeg",
+                            "data": img_b64
+                        }
+                    }
+                ]
+            }]
+        }
 
-        for m in modelli:
-            try:
-                model = genai.GenerativeModel(m)
-                response = model.generate_content([prompt, img_pulita])
-                if response and response.text:
-                    break
-            except Exception:
-                continue
+        res = requests.post(url, headers=headers, json=payload)
+        res_json = res.json()
 
-        if not response:
-            return "Errore durante l'elaborazione del modello AI", 500
+        if res.status_code != 200:
+            return f"Errore API Google ({res.status_code}): {res.text}", 500
 
-        testo_pulito = response.text.replace("```json", "").replace("```", "").strip()
+        raw_text = res_json['candidates'][0]['content']['parts'][0]['text']
+        testo_pulito = raw_text.replace("```json", "").replace("```", "").strip()
         struttura = json.loads(testo_pulito)
 
+        # Genera il file Word
         doc = Document()
         for blocco in struttura.get("blocchi", []):
             tipo = blocco.get("tipo")
@@ -126,6 +133,7 @@ def convert():
         doc.save(out_buffer)
         out_buffer.seek(0)
         return send_file(out_buffer, mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', as_attachment=True, download_name='documento_convertito.docx')
+
     except Exception as e:
         return f"Errore durante l'elaborazione: {str(e)}", 500
 
