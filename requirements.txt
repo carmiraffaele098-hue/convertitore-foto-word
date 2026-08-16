@@ -1,5 +1,5 @@
-google-generativeai
-python-docx
-Pillow
 flask
+google-genai
+pillow
+python-docx
 gunicorn
